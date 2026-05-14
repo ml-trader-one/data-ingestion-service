@@ -58,6 +58,7 @@ def create_app() -> FastAPI:
         ),
         version="0.1.0",
         lifespan=lifespan,
+        root_path="/ingestion"
     )
     app.include_router(router)
     return app
