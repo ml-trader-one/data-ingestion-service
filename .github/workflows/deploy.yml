@@ -56,6 +56,7 @@ jobs:
         env:
           GITHUB_OWNER: ${{ github.repository_owner }}
           INVEST_TOKEN: ${{ secrets.INVEST_TOKEN }}
+          GITHUB_SHA: ${{ github.sha }}
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
@@ -66,6 +67,6 @@ jobs:
             echo "${{ secrets.CR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             export GITHUB_REPOSITORY_OWNER=$GITHUB_OWNER
             export INVEST_TOKEN=$INVEST_TOKEN
-            export INGESTION_IMAGE_TAG=sha-${GITHUB_SHA::7}
+            export INGESTION_IMAGE_TAG=sha-${GITHUB_SHA:0:7}
             docker compose pull data-ingestion-service
             docker compose up -d data-ingestion-service
