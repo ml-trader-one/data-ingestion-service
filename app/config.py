@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     app_port: int = Field(8000, alias="APP_PORT")
     log_level: str = Field("INFO", alias="LOG_LEVEL")
 
+    loki_url: str = Field("localhost:3100", alias="LOKI_URL")
+
     @property
     def postgres_dsn(self) -> str:
         return (
