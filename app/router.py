@@ -39,8 +39,7 @@ class HistoricalLoadBackground(BaseModel):
     message: str
 
 
-@router.post("/candles/load", response_model=HistoricalLoadResponse)
-async def load_candles(request: HistoricalLoadRequest) -> HistoricalLoadResponse:
+def _validate_historical_request(request: HistoricalLoadRequest) -> None:
     if request.from_date >= request.to_date:
         raise HTTPException(status_code=422, detail="from_date должна быть раньше to_date")
 
@@ -48,8 +47,13 @@ async def load_candles(request: HistoricalLoadRequest) -> HistoricalLoadResponse
         raise HTTPException(
             status_code=422,
             detail=f"Неизвестный интервал: {request.interval}. "
-                   f"Допустимые: {list(CANDLE_INTERVAL_MAP.keys())}",
+            f"Допустимые: {list(CANDLE_INTERVAL_MAP.keys())}",
         )
+
+
+@router.post("/candles/load", response_model=HistoricalLoadResponse)
+async def load_candles(request: HistoricalLoadRequest) -> HistoricalLoadResponse:
+    _validate_historical_request(request)
 
     try:
         result = await load_historical(
@@ -72,8 +76,7 @@ async def load_candles_async(
     request: HistoricalLoadRequest,
     background_tasks: BackgroundTasks,
 ) -> HistoricalLoadBackground:
-    if request.from_date >= request.to_date:
-        raise HTTPException(status_code=422, detail="from_date должна быть раньше to_date")
+    _validate_historical_request(request)
 
     background_tasks.add_task(
         load_historical,
