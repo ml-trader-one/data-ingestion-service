@@ -4,11 +4,25 @@ import structlog
 
 from app.candle_service import handle_stream_candle
 from app.config import settings
-from app.invest_client import run_market_data_stream, SUBSCRIPTION_INTERVAL_TO_STR
+from app.invest_client import (
+    SUBSCRIPTION_INTERVAL_MAP,
+    SUBSCRIPTION_INTERVAL_TO_STR,
+    run_market_data_stream,
+)
 
 logger = structlog.get_logger(__name__)
 
 _stream_task: asyncio.Task | None = None
+
+
+def _resolve_stream_db_interval(interval_str: str) -> str:
+    if interval_str not in SUBSCRIPTION_INTERVAL_MAP:
+        raise ValueError(
+            f"Неизвестный интервал стриминга: {interval_str}. "
+            f"Допустимые: {list(SUBSCRIPTION_INTERVAL_MAP.keys())}"
+        )
+
+    return SUBSCRIPTION_INTERVAL_TO_STR.get(interval_str, interval_str)
 
 
 async def start_streaming() -> None:
@@ -20,6 +34,8 @@ async def start_streaming() -> None:
     if not instruments:
         logger.warning("No stream instruments configured, streaming skipped")
         return
+
+    _resolve_stream_db_interval(interval)
 
     logger.info(
         "Starting market data stream",
@@ -48,7 +64,7 @@ async def _stream_with_reconnect(instruments: list[str], interval_str: str) -> N
     backoff = 5
     max_backoff = 60
 
-    db_interval = SUBSCRIPTION_INTERVAL_TO_STR.get(interval_str, interval_str)
+    db_interval = _resolve_stream_db_interval(interval_str)
 
     async def on_candle(candle):
         await handle_stream_candle(candle, interval=db_interval)
