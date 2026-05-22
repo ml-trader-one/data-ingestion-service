@@ -4,8 +4,10 @@ from typing import Any
 
 import structlog
 from aiokafka import AIOKafkaProducer
+from sqlalchemy import select
 
 from app.config import settings
+from app.database import AsyncSessionLocal, OutboxEvent
 
 logger = structlog.get_logger(__name__)
 
@@ -46,3 +48,47 @@ async def publish_candle(candle_dict: dict[str, Any]) -> None:
         value=candle_dict,
         key=candle_dict["instrument_uid"].encode(),  # партиционирование по instrument_uid
     )
+
+
+async def flush_pending_outbox(limit: int = 100) -> int:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(OutboxEvent)
+            .where(OutboxEvent.status == "pending")
+            .order_by(OutboxEvent.id.asc())
+            .limit(limit)
+        )
+        events = result.scalars().all()
+
+        if not events:
+            return 0
+
+        producer = await get_producer()
+        published = 0
+
+        for event in events:
+            try:
+                await producer.send_and_wait(
+                    event.topic,
+                    value=event.payload,
+                    key=event.message_key.encode(),
+                )
+            except Exception as exc:
+                event.attempts += 1
+                event.last_error = str(exc)
+                await session.commit()
+                logger.warning(
+                    "Outbox publish failed",
+                    event_id=event.id,
+                    topic=event.topic,
+                    error=str(exc),
+                )
+            else:
+                event.status = "published"
+                event.attempts += 1
+                event.last_error = None
+                event.published_at = datetime.utcnow()
+                await session.commit()
+                published += 1
+
+        return published

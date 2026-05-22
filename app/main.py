@@ -9,7 +9,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.config import settings
 from app.database import create_tables
-from app.kafka_producer import stop_producer
+from app.kafka_producer import flush_pending_outbox, stop_producer
 from app.router import router
 from app.streaming import start_streaming, stop_streaming
 
@@ -79,6 +79,11 @@ async def lifespan(app: FastAPI):
     log.info("Starting ingestion service...")
     await create_tables()
     log.info("Database tables ready")
+    try:
+        published = await flush_pending_outbox()
+        log.info("Outbox flush complete", published=published)
+    except Exception as exc:
+        log.warning("Outbox flush failed on startup", error=str(exc))
 
     await start_streaming()
 

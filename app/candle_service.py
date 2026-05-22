@@ -3,9 +3,10 @@ from datetime import datetime
 from sqlalchemy.dialects.postgresql import insert
 import structlog
 
-from app.database import AsyncSessionLocal, Candle
+from app.config import settings
+from app.database import AsyncSessionLocal, Candle, OutboxEvent
 from app.invest_client import fetch_historical_candles, quotation_to_float
-from app.kafka_producer import publish_candle
+from app.kafka_producer import flush_pending_outbox
 
 logger = structlog.get_logger(__name__)
 
@@ -34,38 +35,53 @@ def candle_to_dict(
     }
 
 
+def candle_to_kafka_payload(candle_dict: dict) -> dict:
+    return {
+        **candle_dict,
+        "time": candle_dict["time"].isoformat(),
+    }
+
+
 async def save_candle_to_db(candle_dict: dict) -> None:
     async with AsyncSessionLocal() as session:
-        stmt = (
-            insert(Candle)
-            .values(
-                instrument_uid=candle_dict["instrument_uid"],
-                figi=candle_dict["figi"],
-                interval=candle_dict["interval"],
-                time=candle_dict["time"],
-                open=candle_dict["open"],
-                high=candle_dict["high"],
-                low=candle_dict["low"],
-                close=candle_dict["close"],
-                volume=candle_dict["volume"],
-                is_complete=candle_dict.get("is_complete", True),
-                source=candle_dict.get("source", "historical"),
+        async with session.begin():
+            stmt = (
+                insert(Candle)
+                .values(
+                    instrument_uid=candle_dict["instrument_uid"],
+                    figi=candle_dict["figi"],
+                    interval=candle_dict["interval"],
+                    time=candle_dict["time"],
+                    open=candle_dict["open"],
+                    high=candle_dict["high"],
+                    low=candle_dict["low"],
+                    close=candle_dict["close"],
+                    volume=candle_dict["volume"],
+                    is_complete=candle_dict.get("is_complete", True),
+                    source=candle_dict.get("source", "historical"),
+                )
+                .on_conflict_do_update(
+                    constraint="pk_candle",
+                    set_={
+                        "open": candle_dict["open"],
+                        "high": candle_dict["high"],
+                        "low": candle_dict["low"],
+                        "close": candle_dict["close"],
+                        "volume": candle_dict["volume"],
+                        "is_complete": candle_dict.get("is_complete", True),
+                        "source": candle_dict.get("source", "historical"),
+                    },
+                )
             )
-            .on_conflict_do_update(
-                constraint="pk_candle",
-                set_={
-                    "open": candle_dict["open"],
-                    "high": candle_dict["high"],
-                    "low": candle_dict["low"],
-                    "close": candle_dict["close"],
-                    "volume": candle_dict["volume"],
-                    "is_complete": candle_dict.get("is_complete", True),
-                    "source": candle_dict.get("source", "historical"),
-                },
+
+            await session.execute(stmt)
+            session.add(
+                OutboxEvent(
+                    topic=settings.kafka_topic_raw_candles,
+                    message_key=candle_dict["instrument_uid"],
+                    payload=candle_to_kafka_payload(candle_dict),
+                )
             )
-        )
-        await session.execute(stmt)
-        await session.commit()
 
 
 async def load_historical(
@@ -94,12 +110,15 @@ async def load_historical(
             source="historical",
         )
         await save_candle_to_db(candle_dict)
-        await publish_candle({
-            **candle_dict,
-            "time": candle_dict["time"].isoformat(),
-        })
         saved += 1
 
+    try:
+        published = await flush_pending_outbox()
+    except Exception as exc:
+        published = 0
+        log.warning("Outbox flush failed after historical load", error=str(exc))
+
+    log.info("Historical load outbox flush complete", published=published)
     log.info("Historical load complete", saved=saved)
     return {"figi": figi, "instrument_uid": instrument_uid, "interval": interval, "saved": saved, "skipped": 0}
 
@@ -116,14 +135,17 @@ async def handle_stream_candle(candle, interval: str) -> None:
         source="stream",
     )
     await save_candle_to_db(candle_dict)
-    await publish_candle({
-        **candle_dict,
-        "time": candle_dict["time"].isoformat(),
-    })
+    try:
+        published = await flush_pending_outbox()
+    except Exception as exc:
+        published = 0
+        logger.warning("Outbox flush failed after stream candle", error=str(exc))
+
     logger.info(
         "Stream candle saved",
         figi=figi,
         instrument_uid=instrument_uid,
         interval=interval,
         time=candle_dict["time"].isoformat(),
+        published=published,
     )
