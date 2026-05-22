@@ -13,11 +13,23 @@ from app.kafka_producer import stop_producer
 from app.router import router
 from app.streaming import start_streaming, stop_streaming
 
+SERVICE_LOGGER_NAME = "data_ingestion_service"
+
 
 def configure_logging():
+    root_logger = logging.getLogger()
+    existing_service_handlers = [
+        handler
+        for handler in root_logger.handlers
+        if getattr(handler, "_data_ingestion_service_handler", False)
+    ]
+    for handler in existing_service_handlers:
+        root_logger.removeHandler(handler)
+        handler.close()
+
     loki_handler = logging_loki.LokiHandler(
         url=f"{settings.loki_url}/loki/api/v1/push",
-        tags={"service": "data-ingestion-service"},
+        tags={"service": SERVICE_LOGGER_NAME},
         version="1",
     )
 
@@ -37,8 +49,9 @@ def configure_logging():
 
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
+    handler._data_ingestion_service_handler = True
 
-    root_logger = logging.getLogger()
+    loki_handler._data_ingestion_service_handler = True
     root_logger.addHandler(handler)
     root_logger.addHandler(loki_handler)
     root_logger.setLevel(logging.getLevelName(settings.log_level))
