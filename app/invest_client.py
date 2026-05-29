@@ -8,7 +8,9 @@ from t_tech.invest import (
     HistoricCandle,
     SubscriptionInterval,
 )
-from t_tech.invest.async_services import AsyncMarketDataStreamManager
+from t_tech.invest.market_data_stream.async_market_data_stream_manager import (
+    AsyncMarketDataStreamManager,
+)
 
 from app.config import settings
 
