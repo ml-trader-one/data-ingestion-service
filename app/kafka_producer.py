@@ -8,6 +8,10 @@ from sqlalchemy import select
 
 from app.config import settings
 from app.database import AsyncSessionLocal, OutboxEvent
+from app.metrics import (
+    KAFKA_MESSAGES_PRODUCED,
+    KAFKA_PRODUCE_DURATION,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -43,11 +47,18 @@ async def stop_producer():
 
 async def publish_candle(candle_dict: dict[str, Any]) -> None:
     producer = await get_producer()
-    await producer.send_and_wait(
-        settings.kafka_topic_raw_candles,
-        value=candle_dict,
-        key=candle_dict["instrument_uid"].encode(),  # партиционирование по instrument_uid
-    )
+    topic = settings.kafka_topic_raw_candles
+    with KAFKA_PRODUCE_DURATION.labels(topic=topic).time():
+        try:
+            await producer.send_and_wait(
+                settings.kafka_topic_raw_candles,
+                value=candle_dict,
+                key=candle_dict["instrument_uid"].encode(),  # партиционирование по instrument_uid
+            )
+        except Exception:
+            KAFKA_MESSAGES_PRODUCED.labels(topic=topic, status="error").inc()
+        else:
+            KAFKA_MESSAGES_PRODUCED.labels(topic=topic, status="success").inc()
 
 
 async def flush_pending_outbox(limit: int = 100) -> int:
@@ -67,28 +78,32 @@ async def flush_pending_outbox(limit: int = 100) -> int:
         published = 0
 
         for event in events:
-            try:
-                await producer.send_and_wait(
-                    event.topic,
-                    value=event.payload,
-                    key=event.message_key.encode(),
-                )
-            except Exception as exc:
-                event.attempts += 1
-                event.last_error = str(exc)
-                await session.commit()
-                logger.warning(
-                    "Outbox publish failed",
-                    event_id=event.id,
-                    topic=event.topic,
-                    error=str(exc),
-                )
-            else:
-                event.status = "published"
-                event.attempts += 1
-                event.last_error = None
-                event.published_at = datetime.utcnow()
-                await session.commit()
-                published += 1
+            topic = settings.kafka_topic_raw_candles
+            with KAFKA_PRODUCE_DURATION.labels(topic=topic).time():
+                try:
+                    await producer.send_and_wait(
+                        event.topic,
+                        value=event.payload,
+                        key=event.message_key.encode(),
+                    )
+                except Exception as exc:
+                    KAFKA_MESSAGES_PRODUCED.labels(topic=topic, status="error").inc()
+                    event.attempts += 1
+                    event.last_error = str(exc)
+                    await session.commit()
+                    logger.warning(
+                        "Outbox publish failed",
+                        event_id=event.id,
+                        topic=event.topic,
+                        error=str(exc),
+                    )
+                else:
+                    KAFKA_MESSAGES_PRODUCED.labels(topic=topic, status="success").inc()
+                    event.status = "published"
+                    event.attempts += 1
+                    event.last_error = None
+                    event.published_at = datetime.utcnow()
+                    await session.commit()
+                    published += 1
 
         return published
