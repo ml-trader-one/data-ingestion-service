@@ -1,6 +1,5 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
-from typing import List
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -41,7 +40,7 @@ class Settings(BaseSettings):
         )
 
     @property
-    def stream_instruments_list(self) -> List[str]:
+    def stream_instruments_list(self) -> list[str]:
         return [i.strip() for i in self.stream_instruments.split(",") if i.strip()]
 
 

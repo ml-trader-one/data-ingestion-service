@@ -1,7 +1,7 @@
 import logging
-import logging_loki
 from contextlib import asynccontextmanager
 
+import logging_loki
 import structlog
 import uvicorn
 from fastapi import FastAPI
@@ -104,7 +104,7 @@ def create_app() -> FastAPI:
         ),
         version="0.1.0",
         lifespan=lifespan,
-        root_path="/ingestion"
+        root_path="/ingestion",
     )
     app.include_router(router)
     return app

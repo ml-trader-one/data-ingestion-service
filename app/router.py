@@ -104,6 +104,7 @@ async def get_candles(
     limit: Annotated[int, Query(ge=1, le=5000)] = 500,
 ):
     from sqlalchemy import select
+
     from app.database import AsyncSessionLocal, Candle
 
     async with AsyncSessionLocal() as session:

@@ -173,8 +173,14 @@ async def test_load_historical_success(monkeypatch):
         yield candle2
 
     mapping = {
-        "o1": 10.0, "h1": 11.0, "l1": 9.0, "c1": 10.5,
-        "o2": 20.0, "h2": 21.0, "l2": 19.0, "c2": 20.5,
+        "o1": 10.0,
+        "h1": 11.0,
+        "l1": 9.0,
+        "c1": 10.5,
+        "o2": 20.0,
+        "h2": 21.0,
+        "l2": 19.0,
+        "c2": 20.5,
     }
 
     save_mock = AsyncMock()
@@ -207,12 +213,16 @@ async def test_load_historical_success(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handle_stream_candle(monkeypatch, sample_candle):
-    monkeypatch.setattr(m, "quotation_to_float", lambda x: {
-        "open_q": 100.0,
-        "high_q": 110.0,
-        "low_q": 90.0,
-        "close_q": 105.0,
-    }[x])
+    monkeypatch.setattr(
+        m,
+        "quotation_to_float",
+        lambda x: {
+            "open_q": 100.0,
+            "high_q": 110.0,
+            "low_q": 90.0,
+            "close_q": 105.0,
+        }[x],
+    )
 
     save_mock = AsyncMock()
     publish_mock = AsyncMock()

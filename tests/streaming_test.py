@@ -110,6 +110,7 @@ async def test_stop_streaming_cancels_task():
         def __await__(self):
             async def _inner():
                 raise asyncio.CancelledError
+
             return _inner().__await__()
 
     task = DummyTask()

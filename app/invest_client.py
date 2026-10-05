@@ -1,5 +1,5 @@
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import datetime
-from typing import AsyncGenerator, Callable, Awaitable
 
 from t_tech.invest import (
     AsyncClient,
@@ -35,10 +35,10 @@ SUBSCRIPTION_INTERVAL_MAP: dict[str, SubscriptionInterval] = {
 }
 
 SUBSCRIPTION_INTERVAL_TO_STR: dict[str, str] = {
-    "SUBSCRIPTION_INTERVAL_ONE_MINUTE":   "1MIN",
+    "SUBSCRIPTION_INTERVAL_ONE_MINUTE": "1MIN",
     "SUBSCRIPTION_INTERVAL_FIVE_MINUTES": "5MIN",
-    "SUBSCRIPTION_INTERVAL_ONE_HOUR":     "1HOUR",
-    "SUBSCRIPTION_INTERVAL_ONE_DAY":      "1DAY",
+    "SUBSCRIPTION_INTERVAL_ONE_HOUR": "1HOUR",
+    "SUBSCRIPTION_INTERVAL_ONE_DAY": "1DAY",
 }
 
 
@@ -55,8 +55,7 @@ async def fetch_historical_candles(
     candle_interval = CANDLE_INTERVAL_MAP.get(interval.upper())
     if candle_interval is None:
         raise ValueError(
-            f"Неизвестный интервал: {interval}. "
-            f"Допустимые: {list(CANDLE_INTERVAL_MAP.keys())}"
+            f"Неизвестный интервал: {interval}. Допустимые: {list(CANDLE_INTERVAL_MAP.keys())}"
         )
 
     async with AsyncClient(settings.invest_token) as client:
@@ -82,8 +81,7 @@ async def run_market_data_stream(
         )
 
     candle_instruments = [
-        CandleInstrument(figi=figi, interval=sub_interval)
-        for figi in instruments
+        CandleInstrument(figi=figi, interval=sub_interval) for figi in instruments
     ]
 
     async with AsyncClient(settings.invest_token) as client:

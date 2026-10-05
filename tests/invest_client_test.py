@@ -15,6 +15,7 @@ def test_quotation_to_float():
 
 def test_fetch_historical_candles_invalid_interval():
     with pytest.raises(ValueError, match="Неизвестный интервал"):
+
         async def _run():
             result = []
             async for item in m.fetch_historical_candles(
@@ -24,7 +25,9 @@ def test_fetch_historical_candles_invalid_interval():
                 interval="BAD_INTERVAL",
             ):
                 result.append(item)
+
         import asyncio
+
         asyncio.run(_run())
 
 
@@ -105,6 +108,7 @@ async def test_run_market_data_stream_success(monkeypatch):
             async def generator():
                 for item in self._items:
                     yield item
+
             return generator()
 
     class DummyClientInstance:
@@ -140,7 +144,10 @@ async def test_run_market_data_stream_success(monkeypatch):
     assert len(subscribe_calls[0]) == 2
     assert subscribe_calls[0][0].figi == "FIGI1"
     assert subscribe_calls[0][1].figi == "FIGI2"
-    assert subscribe_calls[0][0].interval == m.SUBSCRIPTION_INTERVAL_MAP["SUBSCRIPTION_INTERVAL_ONE_MINUTE"]
+    assert (
+        subscribe_calls[0][0].interval
+        == m.SUBSCRIPTION_INTERVAL_MAP["SUBSCRIPTION_INTERVAL_ONE_MINUTE"]
+    )
 
     assert callback.await_count == 2
     first_candle = callback.await_args_list[0].args[0]

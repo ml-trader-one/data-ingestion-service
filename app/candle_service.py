@@ -1,7 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy.dialects.postgresql import insert
 import structlog
+from sqlalchemy.dialects.postgresql import insert
 
 from app.config import settings
 from app.database import AsyncSessionLocal, Candle, OutboxEvent
@@ -120,7 +120,13 @@ async def load_historical(
 
     log.info("Historical load outbox flush complete", published=published)
     log.info("Historical load complete", saved=saved)
-    return {"figi": figi, "instrument_uid": instrument_uid, "interval": interval, "saved": saved, "skipped": 0}
+    return {
+        "figi": figi,
+        "instrument_uid": instrument_uid,
+        "interval": interval,
+        "saved": saved,
+        "skipped": 0,
+    }
 
 
 async def handle_stream_candle(candle, interval: str) -> None:
