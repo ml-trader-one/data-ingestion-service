@@ -1,7 +1,7 @@
 # tests/candle_service_test.py
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
@@ -81,7 +81,8 @@ def test_candle_to_dict_default_is_complete(monkeypatch):
 @pytest.mark.asyncio
 async def test_save_candle_to_db(monkeypatch):
     execute_mock = AsyncMock()
-    commit_mock = AsyncMock()
+    transaction_exit = AsyncMock(return_value=False)
+    add_mock = Mock()
 
     class DummySession:
         async def __aenter__(self):
@@ -91,7 +92,16 @@ async def test_save_candle_to_db(monkeypatch):
             return None
 
         execute = execute_mock
-        commit = commit_mock
+        add = add_mock
+
+        def begin(self):
+            return SimpleNamespaceTransaction()
+
+    class SimpleNamespaceTransaction:
+        async def __aenter__(self):
+            return self
+
+        __aexit__ = transaction_exit
 
     monkeypatch.setattr(m, "AsyncSessionLocal", lambda: DummySession())
 
@@ -112,7 +122,13 @@ async def test_save_candle_to_db(monkeypatch):
     await m.save_candle_to_db(candle_dict)
 
     execute_mock.assert_awaited_once()
-    commit_mock.assert_awaited_once()
+    transaction_exit.assert_awaited_once()
+    assert transaction_exit.await_args.args == (None, None, None)
+    add_mock.assert_called_once()
+    event = add_mock.call_args.args[0]
+    assert event.message_key == "UID1"
+    assert event.payload["time"] == candle_dict["time"].isoformat()
+    assert event.payload["source"] == "historical"
 
 
 @pytest.mark.asyncio
@@ -122,11 +138,11 @@ async def test_load_historical_empty(monkeypatch):
             yield None
 
     save_mock = AsyncMock()
-    publish_mock = AsyncMock()
+    publish_mock = AsyncMock(return_value=1)
 
     monkeypatch.setattr(m, "fetch_historical_candles", fake_fetch_historical_candles)
     monkeypatch.setattr(m, "save_candle_to_db", save_mock)
-    monkeypatch.setattr(m, "publish_candle", publish_mock)
+    monkeypatch.setattr(m, "flush_pending_outbox", publish_mock)
 
     result = await m.load_historical(
         figi="FIGI1",
@@ -144,7 +160,7 @@ async def test_load_historical_empty(monkeypatch):
         "skipped": 0,
     }
     save_mock.assert_not_awaited()
-    publish_mock.assert_not_awaited()
+    publish_mock.assert_awaited_once_with()
 
 
 @pytest.mark.asyncio
@@ -184,12 +200,12 @@ async def test_load_historical_success(monkeypatch):
     }
 
     save_mock = AsyncMock()
-    publish_mock = AsyncMock()
+    publish_mock = AsyncMock(return_value=1)
 
     monkeypatch.setattr(m, "fetch_historical_candles", fake_fetch_historical_candles)
     monkeypatch.setattr(m, "quotation_to_float", lambda x: mapping[x])
     monkeypatch.setattr(m, "save_candle_to_db", save_mock)
-    monkeypatch.setattr(m, "publish_candle", publish_mock)
+    monkeypatch.setattr(m, "flush_pending_outbox", publish_mock)
 
     result = await m.load_historical(
         figi="FIGI1",
@@ -204,9 +220,9 @@ async def test_load_historical_success(monkeypatch):
     assert result["instrument_uid"] == "UID1"
     assert result["interval"] == "1h"
     assert save_mock.await_count == 2
-    assert publish_mock.await_count == 2
+    publish_mock.assert_awaited_once_with()
 
-    first_payload = publish_mock.await_args_list[0].args[0]
+    first_payload = m.candle_to_kafka_payload(save_mock.await_args_list[0].args[0])
     assert first_payload["time"] == candle1.time.isoformat()
     assert first_payload["source"] == "historical"
 
@@ -225,10 +241,10 @@ async def test_handle_stream_candle(monkeypatch, sample_candle):
     )
 
     save_mock = AsyncMock()
-    publish_mock = AsyncMock()
+    publish_mock = AsyncMock(return_value=1)
 
     monkeypatch.setattr(m, "save_candle_to_db", save_mock)
-    monkeypatch.setattr(m, "publish_candle", publish_mock)
+    monkeypatch.setattr(m, "flush_pending_outbox", publish_mock)
 
     await m.handle_stream_candle(sample_candle, interval="1m")
 
@@ -240,7 +256,7 @@ async def test_handle_stream_candle(monkeypatch, sample_candle):
     assert saved_payload["instrument_uid"] == "UID123"
     assert saved_payload["source"] == "stream"
 
-    published_payload = publish_mock.await_args.args[0]
+    published_payload = m.candle_to_kafka_payload(saved_payload)
     assert published_payload["time"] == sample_candle.time.isoformat()
     assert published_payload["source"] == "stream"
 
@@ -260,10 +276,10 @@ async def test_handle_stream_candle_uses_figi_as_instrument_uid(monkeypatch):
     monkeypatch.setattr(m, "quotation_to_float", lambda x: 1.0)
 
     save_mock = AsyncMock()
-    publish_mock = AsyncMock()
+    publish_mock = AsyncMock(return_value=1)
 
     monkeypatch.setattr(m, "save_candle_to_db", save_mock)
-    monkeypatch.setattr(m, "publish_candle", publish_mock)
+    monkeypatch.setattr(m, "flush_pending_outbox", publish_mock)
 
     await m.handle_stream_candle(candle, interval="5m")
 
